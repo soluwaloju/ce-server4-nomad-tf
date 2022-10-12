@@ -1,0 +1,60 @@
+version: 2.1
+
+executors:
+  tf-light:
+    docker:
+      - image: hashicorp/terraform:light
+    resource_class: large
+
+commands:
+  tf-init-plan:
+    steps:
+      - run:
+           name: terraform init & plan
+           command: |
+              cd $WORKSPACE
+              terraform init -input=false
+              terraform plan -out tfapply -var="aws_region=$AWS_DEFAULT_REGION" -var="aws_access_key=$AWS_ACCESS_KEY" -var="aws_secret_key=$AWS_SECRET_KEY"
+
+jobs:
+ ce4-tf-plan:
+    working_directory: /tmp/project
+    executor: tf-light
+    environment:
+      AWS_DEFAULT_REGION: us-east-2
+      WORKSPACE: nomad-tf
+    steps:
+      - checkout
+      - tf-init-plan
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .
+
+ ce4-tf-apply:
+   executor: tf-light
+   environment:
+      AWS_DEFAULT_REGION: us-east-2
+   steps:
+     - attach_workspace:
+         at: .
+     - run:
+         name: terraform
+         command: |
+           cd nomad-tf
+           terraform apply -auto-approve tfapply
+         no_output_timeout: 3h     
+     - persist_to_workspace:
+         root: .
+         paths:
+           - .
+
+workflows:
+  tf-ce4:
+    jobs:
+      - ce4-tf-plan:
+           context: aws-server4
+      - ce4-tf-apply:
+           requires:
+             - ce4-tf-plan
+           context: aws-server4
